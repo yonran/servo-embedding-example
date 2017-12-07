@@ -1,6 +1,8 @@
+extern crate clap;
 extern crate glutin;
 extern crate servo;
 
+use clap::{App, Arg};
 use servo::gl;
 use glutin::GlContext;
 use servo::BrowserId;
@@ -47,6 +49,15 @@ struct Window {
 }
 
 fn main() {
+    let matches = App::new("My Super Program")
+                          .version("1.0")
+                          .author("Yonathan. <yonathan@gmail.com>")
+                          .about("scrape the web")
+                          .arg(Arg::with_name("headless")
+                               .long("headless")
+                               .help("Disable head"))
+                          .get_matches();
+    let headless: bool = matches.is_present("headless");
 
     println!("Servo version: {}", servo::config::servo_version());
 
@@ -108,7 +119,7 @@ fn main() {
 
             // Mousemove
             glutin::Event::WindowEvent {
-                event: glutin::WindowEvent::MouseMoved { position: (x, y), .. }, ..
+                event: glutin::WindowEvent::CursorMoved { position: (x, y), .. }, ..
             } => {
                 pointer = (x, y);
                 let event = WindowEvent::MouseWindowMoveEventClass(TypedPoint2D::new(x as f32,
