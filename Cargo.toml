@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["Paul Rouget <me@paulrouget.com>"]
 
 [dependencies]
-libservo = { git = "https://github.com/servo/servo", rev = "6051e5ed02" }
+libservo = { git = "https://github.com/servo/servo", rev = "d7b4471c8080c0916277b967994bffcade759c3a" }
+#libservo = { path = "../servo" }
 glutin = "0.9"

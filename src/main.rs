@@ -9,7 +9,7 @@ use servo::compositing::windowing::{WindowEvent, WindowMethods};
 use servo::euclid::{Point2D, ScaleFactor, Size2D, TypedPoint2D, TypedRect, TypedSize2D,
                     TypedVector2D};
 use servo::ipc_channel::ipc;
-use servo::msg::constellation_msg::{Key, KeyModifiers};
+use servo::msg::constellation_msg::{Key, KeyModifiers, TopLevelBrowsingContextId};
 use servo::net_traits::net_error_list::NetError;
 use servo::script_traits::{LoadData, TouchEventType};
 use servo::servo_config::opts;
@@ -72,7 +72,12 @@ fn main() {
     let path = env::current_dir().unwrap().join("resources");
     let path = path.to_str().unwrap().to_string();
     set_resources_path(Some(path));
-    opts::set_defaults(opts::default_opts());
+    if false {
+        opts::set_defaults(opts::default_opts());
+    } else {
+        let args: Vec<String> = std::env::args().collect();
+        opts::from_cmdline_args(&*args);
+    }
 
     let window = Rc::new(Window {
                              glutin_window: window,
@@ -82,7 +87,7 @@ fn main() {
 
     let mut servo = servo::Servo::new(window.clone());
 
-    let url = ServoUrl::parse("https://servo.org").unwrap();
+    let url = ServoUrl::parse("https://google.com").unwrap();
     let (sender, receiver) = ipc::channel().unwrap();
     servo.handle_events(vec![WindowEvent::NewBrowser(url, sender)]);
     let browser_id = receiver.recv().unwrap();
@@ -149,7 +154,7 @@ fn main() {
             glutin::Event::WindowEvent {
                 event: glutin::WindowEvent::Resized(width, height), ..
             } => {
-                let event = WindowEvent::Resize(window.framebuffer_size());
+                let event = WindowEvent::Resize;
                 servo.handle_events(vec![event]);
                 window.glutin_window.resize(width, height);
             }
@@ -192,6 +197,14 @@ impl WindowMethods for Window {
 
     fn window_rect(&self) -> TypedRect<u32, DevicePixel> {
         TypedRect::new(TypedPoint2D::new(0, 0), self.framebuffer_size())
+    }
+
+    // TODO(yonran): are these screen pixels?
+    fn screen_size(&self, _ctx: TopLevelBrowsingContextId) -> Size2D<u32> {
+        TypedSize2D::new(3, 3)
+    }
+    fn screen_avail_size(&self, _ctx: TopLevelBrowsingContextId) -> Size2D<u32> {
+        TypedSize2D::new(3, 3)
     }
 
     fn size(&self) -> TypedSize2D<f32, DeviceIndependentPixel> {
