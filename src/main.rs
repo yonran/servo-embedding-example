@@ -22,6 +22,9 @@ use std::env;
 use std::rc::Rc;
 use std::sync::Arc;
 
+// servo-embedding-example was introduced here:
+// https://groups.google.com/forum/#!msg/mozilla.dev.servo/20lkEsRI-ZI/RbEaVG_MAAAJ
+
 pub struct GlutinEventLoopWaker {
     proxy: Arc<glutin::EventsLoopProxy>,
 }
