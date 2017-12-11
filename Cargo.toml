@@ -4,7 +4,10 @@ version = "0.1.0"
 authors = ["Paul Rouget <me@paulrouget.com>"]
 
 [dependencies]
-libservo = { git = "https://github.com/servo/servo", rev = "d7b4471c8080c0916277b967994bffcade759c3a" }
+# last good
+#libservo = { git = "https://github.com/servo/servo", rev = "d7b4471c8080c0916277b967994bffcade759c3a" }
+# 2017-12-11
+libservo = { git = "https://github.com/servo/servo", rev = "6aae59e7e50531f45d78495cf07970001ef05f86" }
 #libservo = { path = "../servo" }
 glutin = "0.11"
 clap = "2.20.5"
@@ -12,7 +15,6 @@ clap = "2.20.5"
 # workaround for mesa, which only supports GLSL 1.20
 # https://github.com/servo/servo/issues/11124
 
-[patch."https://github.com/servo/webrender"]
-#
+#[patch."https://github.com/servo/webrender"]
 webrender = { path = "../servo-webrender/webrender" }
 webrender_api = { path = "../servo-webrender/webrender_api" }

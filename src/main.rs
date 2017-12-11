@@ -104,8 +104,8 @@ fn main() {
     println!("Servo version: {}", servo::config::servo_version());
 
 
-    // let gl_version = glutin::GlRequest::Latest;
-    let gl_version = glutin::GlRequest::Specific(glutin::Api::OpenGl, (3, 2));
+    let gl_version = glutin::GlRequest::Latest;
+    // let gl_version = glutin::GlRequest::Specific(glutin::Api::OpenGl, (3, 2));
 
     let path = env::current_dir().unwrap().join("resources");
     let path = path.to_str().unwrap().to_string();
