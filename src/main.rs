@@ -7,19 +7,18 @@ extern crate servo;
 
 mod loggl;
 
-use clap::{App, Arg};
+use clap::App;
 use servo::gl;
 use glutin::GlContext;
 use servo::BrowserId;
 use servo::compositing::compositor_thread::EventLoopWaker;
 use servo::compositing::windowing::{WindowEvent, WindowMethods};
-use servo::euclid::{Point2D, ScaleFactor, Size2D, TypedPoint2D, TypedRect, TypedSize2D,
-                    TypedVector2D};
+use servo::euclid::{Point2D, ScaleFactor, Size2D, TypedPoint2D, TypedRect, TypedSize2D};
 use servo::gl::Gl;
 use servo::ipc_channel::ipc;
 use servo::msg::constellation_msg::{Key, KeyModifiers, TopLevelBrowsingContextId};
 use servo::net_traits::net_error_list::NetError;
-use servo::script_traits::{LoadData, TouchEventType};
+use servo::script_traits::{LoadData};
 use servo::servo_config::opts;
 use servo::servo_config::resource_files::set_resources_path;
 use servo::servo_geometry::DeviceIndependentPixel;
@@ -132,15 +131,11 @@ impl<T: AbstractWindow + 'static> Drop for ServoAndWindow<T> {
 
 fn main() {
     env_logger::init().unwrap();
-    let matches = App::new("My Super Program")
+    let _matches = App::new("My Super Program")
                           .version("1.0")
                           .author("Yonathan. <yonathan@gmail.com>")
                           .about("scrape the web")
-                          .arg(Arg::with_name("headless")
-                               .long("headless2")
-                               .help("Disable head"))
                           .get_matches();
-    let headless: bool = matches.is_present("headless");
 
     println!("Servo version: {}", servo::config::servo_version());
 
@@ -152,10 +147,9 @@ fn main() {
     set_resources_path(Some(path));
     if true {
         opts::set_defaults(opts::Opts { 
-            headless: headless,
+            headless: true,
             ..opts::default_opts()
         });
-        println!("headless:{}", headless);
     } else {
         let args: Vec<String> = std::env::args().collect();
         opts::from_cmdline_args(&*args);
@@ -165,7 +159,8 @@ fn main() {
     let highdpi_factor: u32 = 2;
     let (logical_width, logical_height): (u32, u32) = (1024, 768);
     let (device_width, device_height): (u32, u32) = (logical_width * highdpi_factor, logical_height * highdpi_factor);
-    let (mut servo, event_loop_opt): (Box<ServoAndWindowTrait>, Option<glutin::EventsLoop>) = if headless {
+
+    let mut servo: Box<ServoAndWindowTrait> = {
         let headless_context: glutin::HeadlessContext = glutin::HeadlessRendererBuilder::new(device_width, device_height)
             .with_gl(gl_version)
             .build()
@@ -199,37 +194,7 @@ fn main() {
             highdpi_factor});
         let servo = servo::Servo::<HeadlessWindow>::new(window.clone());
         let servo_box: Box<ServoAndWindowTrait> = Box::new(ServoAndWindow { servo: Some(servo), window: window });
-        (servo_box, None)
-    } else {
-        let mut event_loop = glutin::EventsLoop::new();
-        // dimensions here are logical pixels, not device pixels
-        // In OSX winit passes the dimensions to initWithContentRect:styleMask:backing:defer:
-        let builder = glutin::WindowBuilder::new().with_dimensions(logical_width, logical_height);
-        let context = glutin::ContextBuilder::new()
-            .with_gl(gl_version)
-            .with_vsync(true);
-        let window = glutin::GlWindow::new(builder, context, &event_loop).unwrap();
-
-        window.show();
-
-        let gl = unsafe {
-            window
-                .context()
-                .make_current()
-                .expect("Couldn't make window current");
-            gl::GlFns::load_with(|s| window.context().get_proc_address(s) as *const _)
-        };
-
-        let event_loop_waker =
-            Box::new(GlutinEventLoopWaker { proxy: Arc::new(event_loop.create_proxy()) });
-        let window: Rc<Window> = Rc::new(Window {
-            glutin_window: window,
-            waker: event_loop_waker,
-            gl: gl,
-        });
-        let servo = servo::Servo::<Window>::new(window.clone());
-        let servo_box: Box<ServoAndWindowTrait> = Box::new(ServoAndWindow { servo: Some(servo), window: window });
-        (servo_box, Some(event_loop))
+        servo_box
     };
 
     // let url = ServoUrl::parse("https://google.com").unwrap();
@@ -240,100 +205,29 @@ fn main() {
     let browser_id = receiver.recv().unwrap();
     servo.handle_events(vec![WindowEvent::SelectBrowser(browser_id)]);
 
-    let mut pointer = (0.0, 0.0);
-    if let Some(mut event_loop) = event_loop_opt {
-        event_loop.run_forever(|event| {
-            // Blocked until user event or until servo unblocks it
-            match event {
-                // This is the event triggered by GlutinEventLoopWaker
-                glutin::Event::Awakened => {
-                    servo.handle_events(vec![]);
-                }
+    println!("Sleeping 2s before closing…");
+    std::thread::sleep(std::time::Duration::from_millis(6000));
 
-                // Mousemove
-                glutin::Event::WindowEvent {
-                    event: glutin::WindowEvent::CursorMoved { position: (x, y), .. }, ..
-                } => {
-                    pointer = (x, y);
-                    let event = WindowEvent::MouseWindowMoveEventClass(TypedPoint2D::new(x as f32,
-                                                                                        y as f32));
-                    servo.handle_events(vec![event]);
-                }
-
-                // reload when R is pressed
-                glutin::Event::WindowEvent {
-                    event: glutin::WindowEvent::KeyboardInput {
-                        input: glutin::KeyboardInput {
-                            state: glutin::ElementState::Pressed,
-                            virtual_keycode: Some(glutin::VirtualKeyCode::R),
-                            ..
-                        },
-                        ..
-                    },
-                    ..
-                } => {
-                    let event = WindowEvent::Reload(browser_id);
-                    servo.handle_events(vec![event]);
-                }
-
-                // Scrolling
-                glutin::Event::WindowEvent {
-                    event: glutin::WindowEvent::MouseWheel { delta, phase, .. }, ..
-                } => {
-                    let pointer = TypedPoint2D::new(pointer.0 as i32, pointer.1 as i32);
-                    let (dx, dy) = match delta {
-                        glutin::MouseScrollDelta::LineDelta(dx, dy) => {
-                            (dx, dy * 38.0 /*line height*/)
-                        }
-                        glutin::MouseScrollDelta::PixelDelta(dx, dy) => (dx, dy),
-                    };
-                    let scroll_location =
-                        servo::webrender_api::ScrollLocation::Delta(TypedVector2D::new(dx, dy));
-                    let phase = match phase {
-                        glutin::TouchPhase::Started => TouchEventType::Down,
-                        glutin::TouchPhase::Moved => TouchEventType::Move,
-                        glutin::TouchPhase::Ended => TouchEventType::Up,
-                        glutin::TouchPhase::Cancelled => TouchEventType::Up,
-                    };
-                    let event = WindowEvent::Scroll(scroll_location, pointer, phase);
-                    servo.handle_events(vec![event]);
-                }
-                glutin::Event::WindowEvent {
-                    event: glutin::WindowEvent::Resized(width, height), ..
-                } => {
-                    let event = WindowEvent::Resize;
-                    servo.handle_events(vec![event]);
-                    servo.resize(width, height);
-                }
-                _ => {}
-            }
-            glutin::ControlFlow::Continue
-        });
-    } else {
-        println!("Sleeping 2s before closing…");
-        std::thread::sleep(std::time::Duration::from_millis(6000));
-
-        info!("repainting");
-        servo.repaint();  // causes segfault
-        let pixels: Vec<u8> = servo.window().screenshot();
-        let mut png_bytes: Vec<u8> = vec![];
-        {
-            let encoder = PNGEncoder::new(&mut png_bytes);
-            println!("pixels size: {}", pixels.len());
-            encoder.encode(&*pixels, device_width, device_height, image::ColorType::RGBA(8)).expect("Could not encode png");
-        }
-        println!("Successfully encoded png {}", png_bytes.len());
-        {
-            let mut file = File::create("/tmp/screenshot.png").expect("could not create file");
-            file.write(&*png_bytes).expect("Failed to write");
-            file.flush().expect("failed to flush");
-        }
-
-        servo.handle_events(vec![WindowEvent::CloseBrowser(browser_id)]);
-        println!("Sleeping another 2s to wait for errors from other threads…");
-        servo.handle_events(vec![WindowEvent::Quit]);
-        std::thread::sleep(std::time::Duration::from_millis(2000));
+    info!("repainting");
+    servo.repaint();  // causes segfault
+    let pixels: Vec<u8> = servo.window().screenshot();
+    let mut png_bytes: Vec<u8> = vec![];
+    {
+        let encoder = PNGEncoder::new(&mut png_bytes);
+        println!("pixels size: {}", pixels.len());
+        encoder.encode(&*pixels, device_width, device_height, image::ColorType::RGBA(8)).expect("Could not encode png");
     }
+    println!("Successfully encoded png {}", png_bytes.len());
+    {
+        let mut file = File::create("/tmp/screenshot.png").expect("could not create file");
+        file.write(&*png_bytes).expect("Failed to write");
+        file.flush().expect("failed to flush");
+    }
+
+    servo.handle_events(vec![WindowEvent::CloseBrowser(browser_id)]);
+    println!("Sleeping another 2s to wait for errors from other threads…");
+    servo.handle_events(vec![WindowEvent::Quit]);
+    std::thread::sleep(std::time::Duration::from_millis(2000));
 }
 
 impl WindowMethods for Window {
