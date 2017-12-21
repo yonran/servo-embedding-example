@@ -49,7 +49,7 @@ use state_machine_future::RentToOwn;
 #[derive(StateMachineFuture)]
 enum RequestStateMachine {
     #[state_machine_future(start, transitions(Closing, Ready, Error))]
-    WaitingForOnload(Box<ServoAndWindowTrait>, TopLevelBrowsingContextId),
+    WaitingForOnload(Box<ServoAndWindowTrait>, TopLevelBrowsingContextId, std::time::Instant),
     #[state_machine_future(transitions(Ready, Error))]
     Closing(Box<ServoAndWindowTrait>, TopLevelBrowsingContextId, Vec<u8>),
     #[state_machine_future(ready)]
@@ -65,18 +65,20 @@ impl PollRequestStateMachine for RequestStateMachine {
         loop {
             info!("PollRequestStateMachine::WaitingForOnload called");
             let (png_bytes_opt, should_continue): (Option<Vec<u8>>, bool) = {
-                let &mut WaitingForOnload(ref mut servo, browser_id): &mut WaitingForOnload = &mut **state;
+                let &mut WaitingForOnload(ref mut servo, browser_id, start_instant): &mut WaitingForOnload = &mut **state;
                 try_ready!(servo.poll_event_loop_awakened().map_err(|()| -> <RequestStateMachineFuture as Future>::Error {panic!("awakened channel shouldn't be closed")}));
                 info!("MpscEventLoopWaker awakened");
                 let should_continue = servo.handle_events(vec![]);
                 info!("PollRequestStateMachine::WaitingForOnload finished. handle_events -> {}, load_ended -> {}", should_continue, servo.window().load_ended());
+                let load_ended_time = std::time::Instant::now();
                 let png_bytes_opt = if servo.window().load_ended() {
                     info!("recompositing");
-                    // Refresh causes a synchronous composite. But sometimes it is blank if
+                    // Refresh causes a synchronous composite(). But sometimes it is blank if
                     // we don't handle events once before calling Refresh
                     servo.handle_events(vec![]);
                     servo.handle_events(vec![WindowEvent::Refresh]);
                     // servo.repaint();
+                    let recomposite_end_time = std::time::Instant::now();
                     info!("screenshotting");
                     let pixels: Vec<u8> = servo.window().screenshot();
                     let mut png_bytes: Vec<u8> = vec![];
@@ -86,6 +88,7 @@ impl PollRequestStateMachine for RequestStateMachine {
                         info!("encoding png; pixels size: {}", pixels.len());
                         encoder.encode(&*pixels, device_size.width, device_size.height, image::ColorType::RGBA(8)).expect("Could not encode png");
                     }
+                    let encode_finish_time = std::time::Instant::now();
                     /*
                     {
                         let mut file = File::create("/tmp/screenshot.png").expect("could not create file");
@@ -93,6 +96,8 @@ impl PollRequestStateMachine for RequestStateMachine {
                         file.flush().expect("failed to flush");
                     }*/
                     println!("Successfully encoded png {} bytes", png_bytes.len());
+                    let as_ms = |d: std::time::Duration| -> f64 {d.as_secs() as f64 * 1e3 + d.subsec_nanos() as f64 * 1e-6};
+                    info!("Time taken onload: {:.1}ms, composite: {:.1}ms, encoding png: {:.1}ms", as_ms(load_ended_time - start_instant), as_ms(recomposite_end_time - load_ended_time), as_ms(encode_finish_time - recomposite_end_time));
 
                     servo.handle_events(vec![WindowEvent::CloseBrowser(browser_id)]);
                     servo.handle_events(vec![WindowEvent::Quit]);
@@ -103,7 +108,7 @@ impl PollRequestStateMachine for RequestStateMachine {
                 (png_bytes_opt, should_continue)
             };
             if let Some(png_bytes) = png_bytes_opt {
-                let WaitingForOnload(servo, browser_id) = state.take();
+                let WaitingForOnload(servo, browser_id, start_instant) = state.take();
                 info!("PollRequestStateMachine::WaitingForOnload transitioning to Closing");
                 return Ok(Async::Ready(Closing(servo, browser_id, png_bytes).into()));
             } else if should_continue {
@@ -336,7 +341,7 @@ impl Service for RenderService {
         servo.handle_events(vec![WindowEvent::NewBrowser(url, sender)]);
         let browser_id = receiver.recv().unwrap();
         servo.handle_events(vec![WindowEvent::SelectBrowser(browser_id)]);
-        Box::new(RequestStateMachine::start(servo, browser_id))
+        Box::new(RequestStateMachine::start(servo, browser_id, std::time::Instant::now()))
     }
 }
 
