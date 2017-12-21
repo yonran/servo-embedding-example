@@ -65,21 +65,21 @@ impl AbstractWindow for HeadlessWindow {
     }
 }
 
-trait ServoTrait {
+trait ServoAndWindowTrait {
     fn handle_events(&mut self, events: Vec<WindowEvent>) -> bool;
     fn resize(&self, width: u32, height: u32);
 }
-struct ServoTraitObject<T: AbstractWindow + 'static> {
+struct ServoAndWindow<T: AbstractWindow + 'static> {
     window: Rc<T>,
     servo: Option<servo::Servo<T>>,
 }
-impl<T: AbstractWindow + 'static> ServoTrait for ServoTraitObject<T> {
+impl<T: AbstractWindow + 'static> ServoAndWindowTrait for ServoAndWindow<T> {
     fn handle_events(&mut self, events: Vec<WindowEvent>) -> bool {
         self.servo.as_mut().expect("handle_events after deinit").handle_events(events)
     }
     fn resize(&self, width: u32, height: u32) { self.window.resize(width, height); }
 }
-impl<T: AbstractWindow + 'static> Drop for ServoTraitObject<T> {
+impl<T: AbstractWindow + 'static> Drop for ServoAndWindow<T> {
     fn drop(&mut self) {
         let mut servo_opt: Option<servo::Servo<T>> = None;
         std::mem::swap(&mut servo_opt, &mut self.servo);
@@ -121,7 +121,7 @@ fn main() {
         opts::from_cmdline_args(&*args);
     }
 
-    let (mut servo, event_loop_opt): (Box<ServoTrait>, Option<glutin::EventsLoop>) = if headless {
+    let (mut servo, event_loop_opt): (Box<ServoAndWindowTrait>, Option<glutin::EventsLoop>) = if headless {
         let headless_test_context: glutin::HeadlessContext = glutin::HeadlessRendererBuilder::new(800, 600)
             .with_gl(glutin::GlRequest::Latest)
             .build()
@@ -163,7 +163,7 @@ fn main() {
         let window = Rc::new(HeadlessWindow {headless_context: headless_context, gl: gl});
         let servo = servo::Servo::<HeadlessWindow>::new(window.clone());
         print_errors("after create servo");
-        let servo_box: Box<ServoTrait> = Box::new(ServoTraitObject { servo: Some(servo), window: window });
+        let servo_box: Box<ServoAndWindowTrait> = Box::new(ServoAndWindow { servo: Some(servo), window: window });
         print_errors("after servo_box");
         (servo_box, None)
     } else {
@@ -192,7 +192,7 @@ fn main() {
             gl: gl,
         });
         let servo = servo::Servo::<Window>::new(window.clone());
-        let servo_box: Box<ServoTrait> = Box::new(ServoTraitObject { servo: Some(servo), window: window });
+        let servo_box: Box<ServoAndWindowTrait> = Box::new(ServoAndWindow { servo: Some(servo), window: window });
         (servo_box, Some(event_loop))
     };
 
